@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <title>WebMIDI sample</title>
+    <style>
+      #keyboard {
+        position: relative;
+        margin: 20px 0 0;
+        user-select:none;
+      }
+
+      .white {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: flex;
+        padding: 0 0 0 34px;
+      }
+
+      .white > div {
+        box-sizing: border-box;
+        flex: 0 0 auto;
+        width: 64px;
+        height: 300px;
+        margin: 0 2px;
+        padding: 250px 0 0;
+        border: solid 1px black;
+        text-align: center;
+        font-size: 16px;
+        font-weight: bold;
+        background-color: white;
+        color: #444;
+      }
+
+      .white > div.press {
+        background-color: #ccc;
+      }
+
+      .black {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: flex;
+      }
+
+      .black > div {
+        box-sizing: border-box;
+        flex: 0 0 auto;
+        width: 48px;
+        height: 200px;
+        margin: 0 10px;
+        padding: 150px 0 0;
+        border: solid 1px black;
+        text-align: center;
+        font-size: 16px;
+        font-weight: bold;
+        background-color: black;
+        color: #fff;
+      }
+
+      .black > div.dummy {
+        visibility: hidden;
+      }
+
+      .black > div.press {
+        background-color: #444;
+      }
+    </style>
+  </head>
+  <body>
+    <div>MIDI Output: <select id="devices"></select></div>
+
+    <div id="keyboard">
+      <div class="white">
+        <div data-note="57">Z</div>
+        <div data-note="59">X</div>
+        <div data-note="60">C</div>
+        <div data-note="62">V</div>
+        <div data-note="64">B</div>
+        <div data-note="65">N</div>
+        <div data-note="67">M</div>
+        <div data-note="69">,</div>
+        <div data-note="71">.</div>
+        <div data-note="72">/</div>
+        <div data-note="74">_</div>
+      </div>
+      <div class="black">
+        <div data-note="56">A</div>
+        <div data-note="58">S</div>
+        <div class="dummy"></div>
+        <div data-note="61">F</div>
+        <div data-note="63">G</div>
+        <div class="dummy"></div>
+        <div data-note="66">J</div>
+        <div data-note="68">K</div>
+        <div data-note="70">L</div>
+        <div class="dummy"></div>
+        <div data-note="73">:</div>
+        <div data-note="75">]</div>
+      </div>
+    </div>
+
+    <script>
+      (function() {
+        let keys = {
+          'KeyA':      56,
+          'KeyZ':      57,
+          'KeyS':      58,
+          'KeyX':      59,
+          'KeyC':      60,
+          'KeyF':      61,
+          'KeyV':      62,
+          'KeyG':      63,
+          'KeyB':      64,
+          'KeyN':      65,
+          'KeyJ':      66,
+          'KeyM':      67,
+          'KeyK':      68,
+          'Comma':     69,
+          'KeyL':      70,
+          'Period':    71,
+          'Slash':     72,
+          'Quote':     73,
+          'IntlRo':    74,
+          'Backslash': 75
+        };
+
+        class PointerTracker {
+          constructor(event) {
+            this.note = null;
+          }
+
+          track(e) {
+            const element = document.elementFromPoint(e.clientX, e.clientY);
+            const note = element.dataset['note'] || null;
+            if(this.note === note) { return; }
+            if(this.note) { app.noteOff(this.note); }
+            if(note) { app.noteOn(note); }
+            this.note = note;
+          }
+
+          release() {
+            if(this.note !== null) {
+              app.noteOff(this.note);
+              this.note = null;
+            }
+          }
+        }
+
+        class App {
+          constructor() {
+            this.devices = [];
+            this.notes = {};
+            this.pointers = {};
+            this.connect()
+          }
+
+          connect() {
+            navigator.requestMIDIAccess().then(
+              (midi) => this.midiReady(midi),
+              (err) => console.log('Something went wrong', err));
+          }
+
+          midiReady(midi) {
+            console.log('Connected', midi);
+
+            // デバイスの状態を反映する
+            midi.addEventListener('statechange', (event) => this.initDevices(event.target), false);
+
+            // 初回の初期化
+            this.initDevices(midi);
+
+            // イベントハンドラの設定
+            window.addEventListener('keydown', this.onKeyDown.bind(this), false);
+            window.addEventListener('keyup', this.onKeyUp.bind(this), false);
+
+            const keyboardEl = document.getElementById('keyboard');
+            keyboardEl.addEventListener('pointerdown', this.onPointerDown.bind(this), false);
+            keyboardEl.addEventListener('pointerup', this.onPointerUp.bind(this), false);
+            keyboardEl.addEventListener('pointercancel', this.onPointerUp.bind(this), false);
+            keyboardEl.addEventListener('pointermove', this.onPointerMove.bind(this), false);
+            keyboardEl.addEventListener('lostpointercapture', this.onLostPointerCapture.bind(this),
+                                        false);
+          }
+
+          initDevices(midi) {
+            let selectEl = document.getElementById('devices');
+            for(let dev of midi.outputs.values()) {
+              let optEl = document.createElement('option');
+              optEl.value = this.devices.length;
+              optEl.textContent = dev.name;
+              selectEl.appendChild(optEl);
+              this.devices.push(dev);
+            }
+            console.log(this.devices);
+          }
+
+          getDevice() {
+            return this.devices[document.getElementById('devices').value];
+          }
+
+          pressKey(pitch, on) {
+            const parent = document.getElementById('keyboard');
+            const el = parent.querySelector('div[data-note="' + pitch +'"]');
+            if(on) {
+              el.classList.add('press');
+            } else {
+              el.classList.remove('press');
+            }
+          }
+
+          noteOn(pitch) {
+            if(this.notes[pitch]) { return; }
+            const device = this.getDevice();
+            if(device) {
+              device.send([0x90, pitch, 100]);
+              this.notes[pitch] = true;
+            }
+            this.pressKey(pitch, true);
+          }
+
+          noteOff(pitch) {
+            if(!this.notes[pitch]) { return; }
+            const device = this.getDevice();
+            if(device) {
+              device.send([0x80, pitch, 100]);
+              this.notes[pitch] = false;
+            }
+            this.pressKey(pitch, false);
+          }
+
+          onKeyDown(e) {
+            let pitch = keys[e.code];
+            if(!e.repeat && pitch) {
+              this.noteOn(pitch)
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }
+
+          onKeyUp(e) {
+            let pitch = keys[e.code];
+            if(pitch) {
+              this.noteOff(pitch)
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }
+
+          onPointerDown(e) {
+            if(this.pointers[e.pointerId]) { return; }
+            const keyboardEl = document.getElementById('keyboard');
+            const note = e.target.dataset['note'];
+            if(!note) { return; }
+            if(!keyboardEl.hasPointerCapture(e.pointerId)) {
+              keyboardEl.setPointerCapture(e.pointerId);
+            }
+            this.pointers[e.pointerId] = new PointerTracker(e);
+            this.pointers[e.pointerId].track(e);
+          }
+
+          onPointerUp(e) {
+            const keyboardEl = document.getElementById('keyboard');
+            if(keyboardEl.hasPointerCapture(e.pointerId)) {
+              keyboardEl.releasePointerCapture(e.pointerId);
+            }
+          }
+
+          onPointerMove(e) {
+            if(!this.pointers[e.pointerId]) { return; }
+            this.pointers[e.pointerId].track(e);
+          }
+
+          onLostPointerCapture(e) {
+            if(!this.pointers[e.pointerId]) { return; }
+            this.pointers[e.pointerId].release();
+            delete this.pointers[e.pointerId];
+          }
+        }
+
+        const app = new App();
+      })();
+    </script>
+  </body>
+</html>

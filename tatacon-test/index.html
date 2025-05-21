@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <title>低遅延ドラムパッド</title>
+  </head>
+  <body>
+    <h1>ゲームパッドのボタンで低遅延ドラム音を再生</h1>
+
+    <div id="message">最初に画面のどこかをクリックしてね</div>
+
+    <script>
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffers = {};
+      let pressedStates = [];
+
+      const soundFiles = {
+        10: "kick.mp3",
+        6:  "snare.mp3",
+        7:  "cymbal.mp3",
+        11: "hat.mp3",
+      };
+
+      // 音声ファイルを読み込んでAudioBufferに変換
+      async function loadSound(index, url) {
+        const response = await fetch(url);
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        audioBuffers[index] = audioBuffer;
+      }
+
+      // 全ての音声ファイルを読み込む
+      async function loadAllSounds() {
+        const promises = Object.entries(soundFiles).map(
+          ([index, url]) => loadSound(index, url)
+        );
+        await Promise.all(promises);
+        console.log("すべての音声を読み込みました");
+      }
+
+      // 音を再生する（新しい AudioBufferSourceNode を作成する必要あり）
+      function playSound(index) {
+        const buffer = audioBuffers[index];
+        if (buffer) {
+          const source = audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioContext.destination);
+          source.start(0);
+        }
+      }
+
+      function pollGamepad() {
+        const gamepads = navigator.getGamepads();
+        if (gamepads[0]) {
+          const gp = gamepads[0];
+          gp.buttons.forEach((button, index) => {
+            const wasPressed = pressedStates[index] || false;
+            if (button.pressed && !wasPressed) {
+              playSound(index);
+            }
+            pressedStates[index] = button.pressed;
+          });
+        }
+        requestAnimationFrame(pollGamepad);
+      }
+
+      // 最初のユーザー操作でAudioContextを再開
+      function init() {
+        document.getElementById('message').textContent = '音声データロード中...';
+        audioContext.resume();
+        loadAllSounds().then(() => {
+          document.getElementById('message').textContent = '準備完了！';
+          console.log("ゲームパッド待機中...");
+        });
+      }
+
+      window.addEventListener("click", init, { once: true });
+
+      window.addEventListener("gamepadconnected", (event) => {
+        console.log("Gamepad connected:", event.gamepad);
+        pressedStates = new Array(event.gamepad.buttons.length).fill(false);
+        pollGamepad();
+      });
+    </script>
+  </body>
+</html>
